@@ -1,5 +1,46 @@
 ---
 services:
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.17.28
+    deploy:
+      resources:
+        limits:
+          cpus: 2.0
+          memory: 4g
+    environment:
+      TZ: UTC
+      discovery.type: single-node
+      node.name: es-node-01
+      cluster.name: opennms-lab
+    ports:
+      - "9200:9200/tcp"
+      - "9300:9300/tcp"
+    volumes:
+      - data-es:/usr/share/elasticsearch/data
+      - ./container-fs/elasticsearch/plugins/:/usr/share/elasticsearch/plugins
+    healthcheck:
+      test: curl http://localhost:9200 >/dev/null; if [[ $$? == 52 ]]; then echo 0; else echo 1; fi
+      interval: 3s
+      timeout: 2s
+      retries: 10
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:7.17.28
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    environment:
+      TZ: UTC
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+    ports:
+      - "5601:5601/tcp"
+    healthcheck:
+      test: curl http://localhost:5601 >/dev/null; if [[ $$? == 52 ]]; then echo 0; else echo 1; fi
+      interval: 30s
+      timeout: 10s
+      retries: 50
+
   mimir:
     image: grafana/mimir:latest
     environment:
@@ -91,6 +132,8 @@ services:
           cpus: 2.0
           memory: 8g
     depends_on:
+      elasticsearch:
+        condition: service_healthy
       database:
         condition: service_healthy
       mimir:
@@ -108,8 +151,6 @@ services:
     ports:
       - "8101:8101/tcp"
       - "8980:8980/tcp"
-      - "162:1162/udp"
-      - "514:10514/udp"
     healthcheck:
       test: [ "CMD", "curl", "-f", "-I", "http://localhost:8980/opennms/login.jsp" ]
       interval: 5s
@@ -161,6 +202,7 @@ services:
 
 volumes:
   data-pg: {}
+  data-es: {}
   data-mimir: {}
   data-core-cfg: {}
   data-core: {}
